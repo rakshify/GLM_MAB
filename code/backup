@@ -127,6 +127,178 @@ while (eplsilon >= threshold and t < 100000):
 
 
 
+print("Creating object")
+model = GLM_MAB(arms = X, w_hat = np.random.multivariate_normal(mean, covariance, size = 1)[0])
+print("object created")
+print(hasattr(model, 'get_params'))
+
+# Lists for plot
+y_plot = []
+x_plot = []
+
+dataset = {}
+dataset["ip"] = []
+dataset["op"] = []
+Y = []
+t = 50
+
+for i in range(t):
+	j = random.randint(0, 999)
+	# M = M + np.outer(X[j], X[j].transpose())
+	dataset["ip"].append(model.arms[j])
+	y = adversary.get_adversary_reward(model.arms[j])
+	Y.append(y)
+	dataset["op"].append(bernoulli.rvs(y))
+
+dataset["ip"] = np.array(dataset["ip"])
+dataset["op"] = np.array(dataset["op"])
+model.update_matrix(dataset["ip"])
+print("matrix updated")
+t_term = log(t)
+ro = [sqrt((float(ro_i) / 100) * t_term) for ro_i in range(1, 10)]
+print ro[:10]
+# random.shuffle(ro)
+# print ro[:10]
+parameters = {'ro' : ro}
+print("parameters set for grid search")
+# TO DO FIT THE MODEL USING GRID SEARCH
+grid = GridSearchCV(model, param_grid=parameters)
+print("grid search object created")
+grid.fit(dataset["ip"], dataset["op"])
+print("fitting dataset")
+print "best ro = ", grid.best_estimator_.ro
+chosen = []
+
+for i in range(t, 10001):
+	print "Doing %d"%i
+
+	# CALCULATION TO BE DONE
+	t_term = log(i + 1)
+	# print t_term
+	ro = [sqrt((float(ro_i) / 100) * t_term) for ro_i in range(1, 10)]
+	print ro[:10]
+	# random.shuffle(ro)
+	# print ro[:10]
+	parameters = {'ro' : ro}
+
+	# Predicting and sampling the next best arm
+	next_arm = model.predict_arm(model.acquisition)					# Predit arm
+	model.update_matrix(next_arm)					# Update design matrix
+	chosen.append(np.where(model.arms == next_arm)[0][0])
+	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
+	# Update the dataset with this sample
+	Y1 = list(dataset["op"])
+	X1 = list(dataset["ip"])
+	X1.append(X[j])
+	Y.append(y)
+	Y1.append(bernoulli.rvs(y))
+	dataset["ip"] = np.array(X1)
+	dataset["op"] = np.array(Y1)
+
+
+	# TO DO FIT THE MODEL USING GRID SEARCH
+	grid = GridSearchCV(model, param_grid=parameters)
+	grid.fit(dataset["ip"], dataset["op"])
+	print "best ro = ", grid.best_estimator_.ro
+
+	x_plot.append(i)
+w_sort = [i[0] for i in sorted(enumerate(list(adversary.w_star_)), key=lambda x:x[1])]
+print w[:10]
+print "best ro = ", grid.best_estimator_.ro
+plt.plot(x_plot, chosen, 'ro')
+plt.show()
+
+
+
+
+
+
+
+
+
+for ro_k in range(1, 11):
+	print "iter ", ro_k
+	const = float(ro_k) / 10
+	# print("Creating object")
+	ro = sqrt(const * log(50))
+	model = GLM_MAB(arms = X, w_hat = np.random.multivariate_normal(mean, covariance, size = 1)[0], ro = ro)
+	# print("object created")
+	# print(hasattr(model, 'get_params'))
+
+
+	dataset = {}
+	dataset["ip"] = []
+	dataset["op"] = []
+	Y = []
+	t = 50
+
+	for i in range(t):
+		j = random.randint(0, 999)
+		dataset["ip"].append(model.arms[j])
+		y = adversary.get_adversary_reward(model.arms[j])
+		Y.append(y)
+		dataset["op"].append(bernoulli.rvs(y))
+
+	dataset["ip"] = np.array(dataset["ip"])
+	dataset["op"] = np.array(dataset["op"])
+	model.update_matrix(dataset["ip"])
+	# print("matrix updated")
+	model.fit(dataset["ip"], dataset["op"])
+	chosen = []
+	cum_regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
+
+	for i in range(t, 1000):
+		# if(i % 100 == 0):
+		# 	print "Doing %d"%i
+
+		ro = sqrt(const * log(i + 1))
+		param = {'ro' : ro}
+		model = model.set_params(param)
+		# print model.solver
+
+		# Predicting and sampling the next best arm
+		next_arm = model.predict_arm(model.acquisition)					# Predit arm
+		model.update_matrix(next_arm)					# Update design matrix
+		chosen.append(np.where(model.arms == next_arm)[0][0])
+		y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
+
+		Y1 = list(dataset["op"])
+		X1 = list(dataset["ip"])
+		X1.append(X[j])
+		Y.append(y)
+		Y1.append(bernoulli.rvs(y))
+		dataset["ip"] = np.array(X1)
+		dataset["op"] = np.array(Y1)
+
+		model.fit(dataset["ip"], dataset["op"])
+		cum_regret += np.linalg.norm(adversary.w_star_ - model.w_hat)
+	x_plot.append(const)
+	avg_reg = .001 * cum_regret
+	print avg_reg
+	y_plot.append(avg_reg)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

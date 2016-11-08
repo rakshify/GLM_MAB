@@ -1,42 +1,52 @@
-import helper
-from learner import Estimator
-import numpy as np, random
-from math import fabs
-import matplotlib.pyplot as plt
-from scipy.stats import bernoulli
+# from learner import Estimator
+import numpy as np, inspect, helper
+from math import fabs, log, sqrt
 from sklearn import linear_model as LM
-from sklearn.model_selection import GridSearchCV
+# from sklearn.base import BaseEstimator
+# from sklearn.model_selection import GridSearchCV
 
 
+# class GLM_MAB(BaseEstimator):
 class GLM_MAB:
 	"""Multi Arm Bandit Problem in Generalised Linear Models.
     This class implements Generalised Linear Models using the
     UCB, Thompson Sampling algorithms.
 	Parameters
     ----------
-    algo_	: string, Algorithm used to solve the MAB problem. 'UCB' and
-			  'Thompson Sampling' are the options
-    arms_	: array, shape (n_arms, n_features) Set of arms for the UCB
+	arms	: array, shape (n_arms, n_features) Set of arms for the UCB
 			  algorithm.
-    model_ 	: bool, default: sklearn.linear_model.LogisticRegression
+	w_hat	: array, shape (1, n_features) The leaning parameter for the
+			  algorithm.
+    algo	: string, Algorithm used to solve the MAB problem. 'UCB' and
+			  'Thompson Sampling' are the options
+    solver 	: string, default: "logistic regression"
 			  Model to estimate the best w_hat to be used for arm prediction
 	ro		: float, exploration parameter to give weight to exploration
     Attributes
     ----------
-    w_hat_	: array, shape (1, n_features) The leaning parameter for the
+    w_hat	: array, shape (1, n_features) The leaning parameter for the
 			  algorithm.
     """
 
 
-	def __init__(self, algo = 'UCB', arms, w_hat, ro = 0.1
-					model = "logistic regression"):
-		self.algo_ = algo
-		self.arms_ = arms
-		self.w_hat_ = w_hat
+	def __init__(self, arms, w_hat, algo = 'UCB', ro = 0.1,
+					solver = "logistic regression"):
+		self.algo = algo
+		self.arms = arms
+		self.w_hat = w_hat
 		self.run = 0
-		self.ro_ = ro
-		if (model == "logistic regression")
+		self.ro = ro
+		self.params_list_ = dict()
+		# print(solver)
+		self.solver = solver
+		frame = inspect.currentframe()
+		args, _, _, values = inspect.getargvalues(frame)
+		for i in args:
+			self.params_list_[i] = values[i]
+		self.params_list_.pop('self', None)
+		if (solver == "logistic regression"):
 			self.model_ = LM.LogisticRegression()
+			# self.params_list_['solver'] = self.model_
 			self.link_ = "logistic"
 		else:
 			assert False, "THIS MODEL NOT DEFINED"
@@ -57,7 +67,80 @@ class GLM_MAB:
             Returns theta estimator.
         """
 		self.model_.fit(X, Y)
-		self.w_hat_ = self.model_.coef_
+		self.w_hat = self.model_.coef_
+
+
+	def predict(self, X):
+		"""This function predicts the reward that we get from the estimators w_hat
+        Parameters
+        ----------
+        X : array, shape (n_samples, n_features) Training vector, where
+			n_samples is the number of samples and n_features is the
+			number of features.
+        Returns
+        -------
+        Y : float
+            Returns rewards on current estimator.
+        """
+		n_samples, n_features = X.shape
+		# print(n_samples, n_features)
+		# print(X[0].shape)
+		# print(self.w_hat.shape)
+		# print(np.dot(self.w_hat, X[0]))
+		Y = [helper.link_func(self.link_, np.dot(self.w_hat, x)[0]) for x in X]
+		Y = np.array(Y)
+
+		return Y
+
+
+	def get_params(self, deep=True):
+		"""Get parameters for this estimator.
+		Parameters
+		----------
+		deep : boolean, optional
+			If True, will return the parameters for this estimator and
+            contained subobjects that are estimators.
+        Returns
+        -------
+        params : mapping of string to any
+            Parameter names mapped to their values.
+		"""
+		# return self.params_list_
+		out = dict()
+		for key in self.params_list_:
+			# We need deprecation warnings to always be on in order to
+			# catch deprecated param values.
+			# This is set in utils/__init__.py but it gets overwritten
+			# when running under python3 somehow.
+			# warnings.simplefilter("always", DeprecationWarning)
+			# try:
+				# with warnings.catch_warnings(record=True) as w:
+					# value = getattr(self, key, None)
+				# if len(w) and w[0].category == DeprecationWarning:
+				# 	# if the parameter is deprecated, don't show it
+				# 	continue
+			# finally:
+			# 	warnings.filters.pop(0)
+			value = getattr(self, key, None)
+
+			# XXX: should we rather test if instance of estimator?
+			if deep and hasattr(value, 'get_params'):
+				deep_items = value.get_params().items()
+				out.update((key + '__' + k, val) for k, val in deep_items)
+			out[key] = value
+		return out
+
+
+	def set_params(self, parameters):
+		# print(type(parameters))
+		# print(parameters)
+		for param in parameters:
+			# print "old = ", getattr(self, param)
+			if(parameters[param] != 0):
+				setattr(self, param, parameters[param])
+			# print "new = ", getattr(self, param)
+
+		return self
 
 
 
@@ -65,7 +148,7 @@ class GLM_MAB:
 		"""Update the self design matrix after new samples
         Parameters
         ----------
-        X : array, shape (1, n_features)
+        X : array, shape (n_samples, n_features)
             Training vector, where n_samples is the number of samples and
             n_features is the number of features.
         Returns
@@ -74,33 +157,41 @@ class GLM_MAB:
             Returns the design matrix.
         """
 		if (self.run == 0):
-			self.M_inv_ = np.zeros((len(X), len(X)))
+			n_samples, n_features = X.shape
+			self.M_inv_ = np.zeros((n_features, n_features))
 			for x in X:
 				self.M_inv_ = self.M_inv_ + np.outer(x, x.transpose())
 			self.M_inv_ = np.linalg.pinv(self.M_inv_)
 		else:
-			add = np.outer(X, X.transpose())
-			self.M_inv_ = helper.lin_alg.update_mat_inv(M_inv, add)
+			# add = np.outer(X, X.transpose())
+			self.M_inv_ = helper.Lin_Alg.update_mat_inv(self.M_inv_, X)
 		self.run += 1
 
 
 
-	def goodness_score(self, w_star):
+	def score(self, X, Y):
 		"""Scoring function to be used to given to Grid Search
         Parameters
         ----------
-        w_star : array, shape (1, n_features)
-            Parameter used by adversary to set the distribution over arms
-        Returns
+        X : array, shape (n_samples, n_features) Training vector, where
+			n_samples is the number of samples and n_features is the
+			number of features.
+        y : array-like, shape (n_samples, 1)
+            Target vector relative to X.
         -------
-        epsilon : float
-            Returns the l2 distance between actual and estimated parameter.
+        goodness : float
+            Returns the difference of predicted rewards and actual rewards.
         """
-		return np.linalg.norm(w_star - self.w_hat_)
+		n_samples, n_features = X.shape
+		Y_pred = self.predict(X)
+		goodness = 0
+		for i in range(n_samples):
+			goodness += fabs(Y_pred[i] - Y[i])
+
+		return goodness
 
 
-
-	def predict_arm(self, acquisition_function = self.acquisition):
+	def predict_arm(self, acquisition_function):
 		"""Function to predict next arm to be sampled
         Parameters
         ----------
@@ -111,18 +202,18 @@ class GLM_MAB:
         self.arm : array, shape(1, n_features)
             Returns the best arm to be pulled.
         """
-		best_arm = self.arms_[0]
-		best_arm_score = acquisition(best_arm)
-		for i in range(1, len(self.arms_)):
-			arm_score = acquisition(self.arms_[i])
+		best_arm = self.arms[0]
+		best_arm_score = acquisition_function(best_arm)
+		for i in range(1, len(self.arms)):
+			arm_score = acquisition_function(self.arms[i])
 			if(best_arm_score < arm_score):
 				best_arm_score = arm_score
-				best_arm = self.arms_[i]
+				best_arm = self.arms[i]
 		return best_arm
 
 
 
-	def acquisition(arm):
+	def acquisition(self, arm):
 		"""Acquisition function to balance exploitation and exploration
         Parameters
         ----------
@@ -133,8 +224,8 @@ class GLM_MAB:
         exploitation + exploration : float,
             						Returns the acquisition score.
         """
-		mu = helper.link_func(self.link_, arm, self.w_hat_)
-		explore = self.ro_ * np.dot(np.dot(arm, self.M_inv_), arm.transpose())
+		mu = helper.link_func(self.link_, np.dot(self.w_hat, arm))
+		explore = self.ro * np.dot(np.dot(arm, self.M_inv_), arm.transpose())
 
 		return mu + explore
 
@@ -144,87 +235,11 @@ class GLM_MAB:
 class Adversary:
 	def __init__(self, w_star, model = "logistic regression"):
 		self.w_star_ = w_star
-		if (model == "logistic regression")
+		if (model == "logistic regression"):
 			self.link_ = "logistic"
 		else:
 			assert False, "THIS MODEL NOT DEFINED"
 
-	def get_adversary_reward(*argv):
-		argv.append(self.w_star_)
-		return helper.link_func(self.link_, *argv)
-
-
-
-
-# Generate w_star for adversary
-mean = np.zeros(1000)
-covariance = np.random.rand(1000, 1000)
-covariance = np.dot(covariance, covariance.transpose()) / np.linalg.norm(np.dot(covariance, covariance.transpose()))
-D = 10
-w_star = np.random.multivariate_normal(mean, covariance, size = 1)[0]
-w_star = w_star / np.linalg.norm(w_star)
-
-adversary = Adversary(w_star)
-
-# Get arms
-X = np.random.multivariate_normal(mean, covariance, size = 1000)
-for x in X:
-	x = x / np.linalg.norm(x)
-
-model = GLM_MAB(arms = X, w_hat = np.random.multivariate_normal(mean, covariance, size = 1)[0]))
-
-
-# Lists for plot
-y_plot = []
-x_plot = []
-
-dataset = {}
-dataset["ip"] = []
-dataset["op"] = []
-Y = []
-t = 50
-
-for i in range(t):
-	j = random.randint(0, 999)
-	# M = M + np.outer(X[j], X[j].transpose())
-	dataset["ip"].append(model.arms_[j])
-	y = adversary.get_adversary_reward(model.arms_[j])
-	Y.append(y)
-	dataset["op"].append(bernoulli.rvs(y))
-
-dataset["ip"] = np.array(dataset["ip"])
-dataset["op"] = np.array(dataset["op"])
-model.update_matrix(dataset["ip"])
-
-
-# TO DO FIT THE MODEL USING GRID SEARCH
-
-chosen = []
-
-for i in range(t, 10001):
-	print "Doing %d"%i
-
-	# CALCULATION TO BE DONE
-	ro = get_ro_value()
-
-	# Predicting and sampling the next best arm
-	next_arm = model.predict_arm()					# Predit arm
-	model.update_matrix(next_arm)					# Update design matrix
-	chosen.append(np.where(model.arms_ == next_arm)[0][0])
-	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
-	# Update the dataset with this sample
-	Y1 = list(dataset["op"])
-	X1 = list(dataset["ip"])
-	X1.append(X[j])
-	Y.append(y)
-	Y1.append(bernoulli.rvs(y))
-	dataset["ip"] = np.array(X1)
-	dataset["op"] = np.array(Y1)
-
-
-	# TO DO FIT THE MODEL USING GRID SEARCH
-
-	x_plot.append(i)
-
-plt.plot(x_plot, y_plot, 'ro')
-plt.show()
+	def get_adversary_reward(self, x):
+		# tuple(list(argv).append(self.w_star_))
+		return helper.link_func(self.link_, np.dot(self.w_star_, x))
