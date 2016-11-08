@@ -1,0 +1,347 @@
+
+
+# X = np.random.multivariate_normal(mean, covariance, size = 1000)
+# Y = np.array([get_adversary_reward("logistic", x, w_star) for x in X])
+
+# Sample some(say, 50) data points in the beginning
+# for i in range(t):
+# 	y = get_adversary_reward("logistic", X[0], w_star)
+# 	dataset["ip"].append(x)
+# 	dataset["op"].append(y)
+
+
+
+
+
+
+# Estimate an initial w_hat using the above sampled data points
+# estimator = Estimator(dataset)
+# w_hat = np.random.multivariate_normal(mean, covariance, size = 1)[0]
+# w_hat = estimator.estimate("Gradient Descent", w_hat, D)			# Estimate w_hat using gradient descent
+# epsilon = np.linalg.norm(w_star - w_hat)
+# print "Distance = ", epsilon
+# y_plot.append(epsilon)
+# x_plot.append(i - 1)
+
+# print "lengths = ", len(estimator.dataset["ip"]), len(dataset["ip"])
+
+# for i in range(50, 1000):
+# 	print "Doing ", i
+# 	x = np.random.multivariate_normal(mean, covariance, size = 1)[0]
+# 	y = get_adversary_reward("logistic", x, w_star)
+# 	X1 = list(X)
+# 	Y1 = list(Y)
+# 	X1.append(x)
+# 	Y1.append(y)
+# 	X = np.array(X1)
+# 	Y = np.array(Y1)
+# 	model.fit(X,Y)
+# 	w_hat = model.coef_
+# 	epsilon = np.linalg.norm(w_star - w_hat)
+# 	print "Distance = ", epsilon
+# 	y_plot.append(epsilon)
+# 	x_plot.append(i)
+# 	estimator.dataset["ip"].append(x)
+# 	estimator.dataset["op"].append(y)
+# 	# print "New length = ", len(estimator.dataset["ip"])
+# 	w_hat = estimator.estimate("Gradient Descent", w_hat, D)
+# 	epsilon = np.linalg.norm(w_star - w_hat)
+# 	# print "Distance = ", epsilon
+# 	y_plot.append(epsilon)
+# 	x_plot.append(i)
+
+
+
+
+
+# def acquisition(i, ro):
+# 	mu = helper.get_link_val("logistic", X[i], w_hat)
+# 	explore = ro * np.dot(np.dot(X[i], M_inv), X[i].transpose())
+#
+# 	return mu + explore
+
+# def get_best_arm(ro):
+# 	max = acquisition(0, ro)
+# 	mi = 0
+# 	for i in range(1, 1000):
+# 		score = acquisition(i, ro)
+# 		if(max < score):
+# 			max = score
+# 			mi = i
+#
+# 	return mi
+
+
+
+
+# def get_link_val(link, *argv):
+# 	p = helper.link_func(link, *argv)
+# 	return p
+# print p
+# return bernoulli.rvs(p)	# + np.random.normal(0, 1, 1)[0]
+
+
+
+
+
+
+# def get_adversary_reward(link, *argv):
+# 	argv.append(w_star)
+# 	return helper.link_func(link, *argv)
+
+
+# add = np.outer(X[j], X[j].transpose())
+# M = M + add
+# M_inv = update_mat_inv(M_inv, add)
+
+
+# epsilon = np.linalg.norm(w_star - w_hat)
+# print "Distance = ", epsilon
+# y_plot.append(epsilon)
+# x_plot.append(49)
+
+
+
+
+
+
+# TO BE INCORPORATED LATER
+'''
+while (eplsilon >= threshold and t < 100000):
+	global epsilon, t
+	x = choose_arm()
+	y = get_adversary_reward("logistic", x, w_star)
+	estimator.dataset["ip"].append(x)
+	estimator.dataset["op"].append(y)
+	w_hat = estimator.estimate("Gradient Descent")
+	epsilon = np.linalg.norm(w_star - w_hat)
+	t += 1
+	yplot.append(epsilon)
+	xplot.append(t)
+
+'''
+
+
+
+
+
+
+
+print("Creating object")
+model = GLM_MAB(arms = X, w_hat = np.random.multivariate_normal(mean, covariance, size = 1)[0])
+print("object created")
+print(hasattr(model, 'get_params'))
+
+# Lists for plot
+y_plot = []
+x_plot = []
+
+dataset = {}
+dataset["ip"] = []
+dataset["op"] = []
+Y = []
+t = 50
+
+for i in range(t):
+	j = random.randint(0, 999)
+	# M = M + np.outer(X[j], X[j].transpose())
+	dataset["ip"].append(model.arms[j])
+	y = adversary.get_adversary_reward(model.arms[j])
+	Y.append(y)
+	dataset["op"].append(bernoulli.rvs(y))
+
+dataset["ip"] = np.array(dataset["ip"])
+dataset["op"] = np.array(dataset["op"])
+model.update_matrix(dataset["ip"])
+print("matrix updated")
+t_term = log(t)
+ro = [sqrt((float(ro_i) / 100) * t_term) for ro_i in range(1, 10)]
+print ro[:10]
+# random.shuffle(ro)
+# print ro[:10]
+parameters = {'ro' : ro}
+print("parameters set for grid search")
+# TO DO FIT THE MODEL USING GRID SEARCH
+grid = GridSearchCV(model, param_grid=parameters)
+print("grid search object created")
+grid.fit(dataset["ip"], dataset["op"])
+print("fitting dataset")
+print "best ro = ", grid.best_estimator_.ro
+chosen = []
+
+for i in range(t, 10001):
+	print "Doing %d"%i
+
+	# CALCULATION TO BE DONE
+	t_term = log(i + 1)
+	# print t_term
+	ro = [sqrt((float(ro_i) / 100) * t_term) for ro_i in range(1, 10)]
+	print ro[:10]
+	# random.shuffle(ro)
+	# print ro[:10]
+	parameters = {'ro' : ro}
+
+	# Predicting and sampling the next best arm
+	next_arm = model.predict_arm(model.acquisition)					# Predit arm
+	model.update_matrix(next_arm)					# Update design matrix
+	chosen.append(np.where(model.arms == next_arm)[0][0])
+	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
+	# Update the dataset with this sample
+	Y1 = list(dataset["op"])
+	X1 = list(dataset["ip"])
+	X1.append(X[j])
+	Y.append(y)
+	Y1.append(bernoulli.rvs(y))
+	dataset["ip"] = np.array(X1)
+	dataset["op"] = np.array(Y1)
+
+
+	# TO DO FIT THE MODEL USING GRID SEARCH
+	grid = GridSearchCV(model, param_grid=parameters)
+	grid.fit(dataset["ip"], dataset["op"])
+	print "best ro = ", grid.best_estimator_.ro
+
+	x_plot.append(i)
+w_sort = [i[0] for i in sorted(enumerate(list(adversary.w_star_)), key=lambda x:x[1])]
+print w[:10]
+print "best ro = ", grid.best_estimator_.ro
+plt.plot(x_plot, chosen, 'ro')
+plt.show()
+
+
+
+
+
+
+
+
+
+for ro_k in range(1, 11):
+	print "iter ", ro_k
+	const = float(ro_k) / 10
+	# print("Creating object")
+	ro = sqrt(const * log(50))
+	model = GLM_MAB(arms = X, w_hat = np.random.multivariate_normal(mean, covariance, size = 1)[0], ro = ro)
+	# print("object created")
+	# print(hasattr(model, 'get_params'))
+
+
+	dataset = {}
+	dataset["ip"] = []
+	dataset["op"] = []
+	Y = []
+	t = 50
+
+	for i in range(t):
+		j = random.randint(0, 999)
+		dataset["ip"].append(model.arms[j])
+		y = adversary.get_adversary_reward(model.arms[j])
+		Y.append(y)
+		dataset["op"].append(bernoulli.rvs(y))
+
+	dataset["ip"] = np.array(dataset["ip"])
+	dataset["op"] = np.array(dataset["op"])
+	model.update_matrix(dataset["ip"])
+	# print("matrix updated")
+	model.fit(dataset["ip"], dataset["op"])
+	chosen = []
+	cum_regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
+
+	for i in range(t, 1000):
+		# if(i % 100 == 0):
+		# 	print "Doing %d"%i
+
+		ro = sqrt(const * log(i + 1))
+		param = {'ro' : ro}
+		model = model.set_params(param)
+		# print model.solver
+
+		# Predicting and sampling the next best arm
+		next_arm = model.predict_arm(model.acquisition)					# Predit arm
+		model.update_matrix(next_arm)					# Update design matrix
+		chosen.append(np.where(model.arms == next_arm)[0][0])
+		y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
+
+		Y1 = list(dataset["op"])
+		X1 = list(dataset["ip"])
+		X1.append(X[j])
+		Y.append(y)
+		Y1.append(bernoulli.rvs(y))
+		dataset["ip"] = np.array(X1)
+		dataset["op"] = np.array(Y1)
+
+		model.fit(dataset["ip"], dataset["op"])
+		cum_regret += np.linalg.norm(adversary.w_star_ - model.w_hat)
+	x_plot.append(const)
+	avg_reg = .001 * cum_regret
+	print avg_reg
+	y_plot.append(avg_reg)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+HELPER BACK UP
+
+
+
+
+
+
+'''
+   FUNCTION TO GENERATE DATASET FOR THE ADVERSARY
+
+   ARGUMENTS: NONE
+
+   RETURNS: DICT
+	Dataset, which is a dictionary with input point as key and output as value
+
+def simulate_data():
+	# Fix a w_star
+	mean = np.zeros(1000)
+	covariance = np.random.rand(1000, 1000)
+	w_star = np.random.multivariate_normal(mean, covariance, size = 1)[0]
+
+	dataset = {}
+	for i in range(10000):
+		while (True):
+			x = np.random.multivariate_normal(mean, covariance, size = 1)[0]		# Pick an input
+			if (x not in dataset):
+				y = link_func("logistic", x, w_star) + np.random.normal(0, 1, 1)[0]             # Generate it's output
+				dataset[x] = y
+				break
+
+	return dataset, w_star
+'''
