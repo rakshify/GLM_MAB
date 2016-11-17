@@ -20,7 +20,10 @@ class Lin_Alg:
         	Updated inverse of the matrix
         '''
     	c = 1 / (1 + np.dot(np.dot(X, M_inv), X.transpose()))
+        # print X.shape
         add = np.outer(X, X.transpose())
+        # print M_inv.shape
+        # print add.shape
     	inter = c * np.dot(np.dot(M_inv, add), M_inv)
     	return M_inv - inter
 
@@ -42,6 +45,25 @@ def link_func(name, val):
     else:
         return 0
 
+
+'''
+   FUNCTION TO GET SAMPLES FROM MULTIVARIATE GAUSSIAN
+
+   ARGUMENTS: 3
+	mean        : Mean of the Gaussian distribution
+    covariance  : Covariance of the Gaussian distribution
+    samples     : Number of samples to be drawn
+
+   RETURNS: FLOAT
+	The output of logistic function
+'''
+def gaussian(mean, covariance, samples):
+    nf = mean.shape[0]
+    shape = [samples]
+    final_shape = list(shape[:])
+    final_shape.append(nf)
+    x = np.random.standard_normal(final_shape).reshape(-1, nf)
+    return np.dot(x, np.sqrt(covariance)) + mean
 
 
 '''

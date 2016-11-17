@@ -2,6 +2,7 @@
 import numpy as np, inspect, helper
 from math import fabs, log, sqrt
 from sklearn import linear_model as LM
+from time import time
 # from sklearn.base import BaseEstimator
 # from sklearn.model_selection import GridSearchCV
 
@@ -15,13 +16,12 @@ class GLM_MAB:
     ----------
 	arms	: array, shape (n_arms, n_features) Set of arms for the UCB
 			  algorithm.
-	w_hat	: array, shape (1, n_features) The leaning parameter for the
-			  algorithm.
     algo	: string, Algorithm used to solve the MAB problem. 'UCB' and
 			  'Thompson Sampling' are the options
     solver 	: string, default: "logistic regression"
 			  Model to estimate the best w_hat to be used for arm prediction
-	ro		: float, exploration parameter to give weight to exploration
+	ro		: float, exploration parameter to give weight to exploration in UCB
+	nu		: float, covariance parameter to give weight to covariance in TS
     Attributes
     ----------
     w_hat	: array, shape (1, n_features) The leaning parameter for the
@@ -29,13 +29,14 @@ class GLM_MAB:
     """
 
 
-	def __init__(self, arms, w_hat, algo = 'UCB', ro = 0.1,
-					solver = "logistic regression"):
+	def __init__(self, arms, algo = 'UCB', ro = 0.1, nu = 0.1,
+					solver = "logistic regression", warm_start = True):
 		self.algo = algo
 		self.arms = arms
-		self.w_hat = w_hat
+		# self.w_hat = w_hat
 		self.run = 0
 		self.ro = ro
+		self.nu = nu
 		self.params_list_ = dict()
 		# print(solver)
 		self.solver = solver
@@ -45,7 +46,7 @@ class GLM_MAB:
 			self.params_list_[i] = values[i]
 		self.params_list_.pop('self', None)
 		if (solver == "logistic regression"):
-			self.model_ = LM.LogisticRegression()
+			self.model_ = LM.LogisticRegression(solver = 'newton-cg', warm_start = warm_start)
 			# self.params_list_['solver'] = self.model_
 			self.link_ = "logistic"
 		else:
@@ -63,11 +64,11 @@ class GLM_MAB:
             Target vector relative to X.
         Returns
         -------
-        self.model_ : object
-            Returns theta estimator.
+        self : object, Returns MAB estimator.
         """
 		self.model_.fit(X, Y)
 		self.w_hat = self.model_.coef_
+		return self
 
 
 	def predict(self, X):
@@ -161,9 +162,11 @@ class GLM_MAB:
 			self.M_inv_ = np.zeros((n_features, n_features))
 			for x in X:
 				self.M_inv_ = self.M_inv_ + np.outer(x, x.transpose())
+			self.M_ = self.M_inv_
 			self.M_inv_ = np.linalg.pinv(self.M_inv_)
 		else:
 			# add = np.outer(X, X.transpose())
+			self.M_ = self.M_ + np.outer(X, X.transpose())
 			self.M_inv_ = helper.Lin_Alg.update_mat_inv(self.M_inv_, X)
 		self.run += 1
 
@@ -202,14 +205,43 @@ class GLM_MAB:
         self.arm : array, shape(1, n_features)
             Returns the best arm to be pulled.
         """
-		best_arm = self.arms[0]
-		best_arm_score = acquisition_function(best_arm)
-		for i in range(1, len(self.arms)):
-			arm_score = acquisition_function(self.arms[i])
-			if(best_arm_score < arm_score):
-				best_arm_score = arm_score
-				best_arm = self.arms[i]
-		return best_arm
+		if self.algo == 'UCB':
+			best_arm = self.arms[0]
+			pt = time()
+			best_arm_score = acquisition_function(best_arm)
+			# print "Took %f seconds to calculate aquisiton function for 1 arm"%(time() - pt)
+			for i in range(1, len(self.arms)):
+				arm_score = acquisition_function(self.arms[i])
+				if(best_arm_score < arm_score):
+					best_arm_score = arm_score
+					best_arm = self.arms[i]
+			# print "Took %f seconds to get best arm"%(time() - pt)
+			return best_arm
+		elif self.algo == 'TS':
+			# Get w_tilda from normal centered at w_hat
+			n_samples, n_features = self.arms.shape
+			pt = time()
+			# w_tilde = np.random.multivariate_normal(self.w_hat.reshape((n_features,)), self.nu * self.M_, size = 1)[0]
+			w_tilde = helper.gaussian(self.w_hat.reshape((n_features,)), self.nu * self.M_, 1)[0]
+			# print "Took %f seconds to sample w_tilde"%(time() - pt)
+
+			# Get arm which maximizes the dot product with the w_hat in case of finite arms
+			if n_features < float("inf"):
+				mx = -1
+				flag = True
+				best_arm = None
+				pt = time()
+				for arm in self.arms:
+					if flag or np.dot(arm, w_tilde) > mx:
+						mx = np.dot(arm, w_tilde)
+						best_arm = arm
+				# print "Took %f seconds to get best arm"%(time() - pt)
+				return best_arm
+			# Get arm as the unit vector along the w_hat in case of infinite arms
+			else:
+				return w_tilde / np.linalg(w_tilde)
+		else:
+			assert False, "Algo not defined"
 
 
 
