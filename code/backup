@@ -1,3 +1,263 @@
+from GLM_MAB import GLM_MAB, Adversary
+from learner import MAB_GridSearch as gs
+from math import log, sqrt
+import helper
+import matplotlib.pyplot as plt
+from scipy.stats import bernoulli
+import numpy as np, pylab, random
+from time import time
+
+my_features = 25
+
+# Generate w_star for adversary
+mean = np.zeros(my_features)
+covariance = np.random.rand(my_features, my_features)
+# covariance = np.dot(covariance, covariance.transpose()) / np.linalg.norm(np.dot(covariance, covariance.transpose()))
+covariance = np.dot(covariance, covariance.transpose()) + (float(random.randint(1, 10)) / 10) * np.eye(my_features)
+# covariance = covariance / np.linalg.det(covariance)
+# w_star = helper.gaussian(mean, covariance, 1)[0]
+w_star = np.random.multivariate_normal(mean, covariance, 1)[0]
+w_star = w_star / np.linalg.norm(w_star)
+# adversary = Adversary(w_star, 0.0)
+adversary = Adversary(w_star, 0.0, model = "linear regression")
+# Get arms
+# X = helper.gaussian(mean, covariance, 100)
+X = np.random.multivariate_normal(mean, covariance, 100)
+n_samples, n_features = X.shape
+for i in range(n_samples):
+	X[i] = X[i] / np.linalg.norm(X[i])
+
+a_star = X[0]
+a_star_reward = adversary.get_adversary_reward(X[0])
+ai = 0
+for i in range(1, n_samples):
+	cur_reward = adversary.get_adversary_reward(X[i])
+	# print cur_reward
+	if(cur_reward > a_star_reward):
+		a_star_reward = cur_reward
+		a_star = X[i]
+		ai = i
+adversary.a_star_reward = a_star_reward
+
+# model = GLM_MAB(arms = X)
+#
+# # Initialize grid search
+# params = {'ro' : [float(i + 1) / 100.0 for i in range(10, 101, 10)]}
+# gs_model = gs(model, adversary, params, 100, plot = plt)
+#
+# # Sample some points for warm start
+# dataset = {}
+# dataset["ip"] = []
+# dataset["op"] = []
+# Y = []
+# t = 50
+# h = np.zeros(n_samples)
+# regret = 0.0
+# y_plot = []
+# x_plot = []
+# for i in range(t):
+# 	j = random.randint(0, 99)
+# 	while(h[j] == 1):
+# 		j = random.randint(0, 99)
+# 	h[j] = 1
+# 	dataset["ip"].append(model.arms[j])
+# 	y = adversary.get_adversary_reward(model.arms[j])
+# 	regret += a_star_reward - y
+# 	x_plot.append(i + 1)
+# 	y_plot.append(regret)
+# 	Y.append(y)
+# 	dataset["op"].append(bernoulli.rvs(y))
+# dataset["ip"] = np.array(dataset["ip"])
+# dataset["op"] = np.array(dataset["op"])
+# model.update_matrix(dataset["ip"])
+#
+# # Fit the model to get best estimator
+# model = gs_model.fit(dataset["ip"], dataset["op"]).best_estimator_
+# print "ro parameter for UCB = ", model.ro
+# const = gs_model.best_const
+# print "Best const config = ", const
+#
+# # Train on this best model
+# # model.fit(dataset["ip"], dataset["op"])
+#
+# # regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
+# print regret
+# # x_plot.append(50)
+# # y_plot.append(regret)
+#
+# for i in range(t, 1000):
+# 	next_arm = model.predict_arm(model.acquisition)					# Predit arm
+# 	model.update_matrix(next_arm)					# Update design matrix
+# 	# chosen.append(np.where(model.arms == next_arm)[0][0])
+# 	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
+#
+# 	Y1 = list(dataset["op"])
+# 	X1 = list(dataset["ip"])
+# 	X1.append(next_arm)
+# 	Y.append(y)
+# 	Y1.append(bernoulli.rvs(y))
+# 	dataset["ip"] = np.array(X1)
+# 	dataset["op"] = np.array(Y1)
+#
+# 	model.fit(dataset["ip"], dataset["op"])
+# 	regret += a_star_reward - y
+# 	print "regret = " + str(regret) + "\twhile taking " + str(i) + "th step"
+# 	x_plot.append(i + 1)
+# 	y_plot.append(regret)
+# 	params = {'ro' : sqrt(const * log(np.linalg.norm(model.M_)))}
+# 	model.set_params(params)
+#
+# plt.subplot(2, 1, 2)
+# plt.plot(x_plot, y_plot, 'red')
+# plt.ylabel('Regret')
+# plt.xlabel('Time step')
+# plt.title('Chosen const = ' + str(const))
+
+
+# model = GLM_MAB(arms = X, algo = 'lazy_TS')
+# model = GLM_MAB(arms = X, algo = 'lazy_TS', solver = "linear regression")
+model = GLM_MAB(arms = X, algo = 'lazy_TS', nu = 0.01, solver = "linear regression")
+
+# # Initialize grid search
+# params = {'const' : [float(i) / 100.0 for i in range(1, 11)]}
+# # params = {'nu' : [float(i) / 10.0 for i in range(1, 11)]}
+# gs_model = gs(model, adversary, params, 1000, plot = plt)
+
+# Sample some points for warm start
+dataset = {}
+dataset["ip"] = []
+dataset["op"] = []
+Y = []
+t = 50
+h = np.zeros(n_samples)
+regret = 0.0
+y_plot = []
+x_plot = []
+for i in range(t):
+	j = random.randint(0, 99)
+	while(h[j] == 1):
+		j = random.randint(0, 99)
+	h[j] = 1
+	dataset["ip"].append(model.arms[j])
+	y = adversary.get_adversary_reward(model.arms[j])
+	regret += a_star_reward - y
+	Y.append(y)
+	x_plot.append(i + 1)
+	y_plot.append(regret)
+	# dataset["op"].append(bernoulli.rvs(y))
+	dataset["op"].append(y)
+dataset["ip"] = np.array(dataset["ip"])
+dataset["op"] = np.array(dataset["op"])
+model.update_matrix(dataset["ip"])
+
+# # Fit the model to get best estimator
+# model = gs_model.fit(dataset["ip"], dataset["op"]).best_estimator_
+# print "nu parameter for TS = ", model.nu
+# const = gs_model.best_const
+# delta = gs_model.best_delta
+# print "Best const config = ", const
+
+# Train on this best model
+model.fit(dataset["ip"], dataset["op"])
+
+# regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
+print regret
+# x_plot.append(50)
+# y_plot.append(regret)
+
+for i in range(t, 10000):
+	next_arm = model.predict_arm(model.acquisition)					# Predit arm
+	model.update_matrix(next_arm)					# Update design matrix
+	# chosen.append(np.where(model.arms == next_arm)[0][0])
+	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
+
+	Y1 = list(dataset["op"])
+	X1 = list(dataset["ip"])
+	X1.append(next_arm)
+	Y.append(y)
+	# Y1.append(bernoulli.rvs(y))
+	Y1.append(y)
+	dataset["ip"] = np.array(X1)
+	dataset["op"] = np.array(Y1)
+
+	model.fit(dataset["ip"], dataset["op"])
+	# regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
+	regret += a_star_reward - y
+	print "regret = " + str(regret) + "\twhile taking " + str(i) + "th step"
+	# params = {'nu' : const *  9 * n_features * log(i / delta)}
+	# params = {'nu' : const * log(i)}
+	# model.set_params(params)
+	x_plot.append(i + 1)
+	y_plot.append(regret)
+
+# plt.subplot(2, 1, 2)
+plt.plot(x_plot, y_plot, 'blue')
+plt.ylabel('Cumulative Regret')
+plt.xlabel('Time step')
+# plt.title('Chosen const = ' + str(const) + "and chosen delta = " + str(delta))
+# plt.title('Chosen const = ' + str(const))
+
+
+
+
+# model = GLM_MAB(arms = X, algo = 'UCB')
+# w_hat = helper.gaussian(mean, covariance, 1)[0]
+# model.w_hat = w_hat / np.linalg.norm(w_hat)
+# regret = 0.0
+# y_plot = []
+# x_plot = []
+#
+# # Initialize grid search
+# # params = {'ro' : [float(i + 1) / 100.0 for i in range(10, 101, 10)]}
+# # gs_model = gs(model, adversary, params, 100, plot = plt)
+# #
+# # # Sample some points for warm start
+# # dataset = {}
+# # dataset["ip"] = []
+# # dataset["op"] = []
+# #
+# # # Fit the model to get best estimator
+# # model = gs_model.fit(dataset["ip"], dataset["op"]).best_estimator_
+# # print "ro parameter for UCB = ", model.ro
+# # const = gs_model.best_const
+# # print "Best const config = ", const
+# t = 50
+# n_samples, n_features = model.arms.shape
+# h = np.zeros(n_samples)
+# for i in range(t):
+# 	j = random.randint(0, n_samples - 1)
+# 	while(h[j] == 1):
+# 		j = random.randint(0, n_samples - 1)
+# 	h[j] = 1
+# 	y = adversary.get_adversary_reward(model.arms[j])
+# 	regret += a_star_reward - y
+# 	x_plot.append(i + 1)
+# 	y_plot.append(regret)
+# 	# print model.arms[j].reshape(1, 1000).shape
+# 	model.update_matrix(model.arms[j].reshape(1, 1000))
+# 	vec = np.dot(model.M_, model.arms[j].reshape(n_features,))
+# 	model.w_hat += vec / np.linalg.norm(vec)
+# 	model.w_hat /= np.linalg.norm(model.w_hat)
+#
+# print regret
+#
+# for i in range(t, 1000):
+# 	next_arm = model.predict_arm(model.acquisition)					# Predit arm
+# 	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
+#
+# 	regret += a_star_reward - y
+# 	print "regret = " + str(regret) + "\twhile taking " + str(i) + "th step"
+# 	x_plot.append(i + 1)
+# 	y_plot.append(regret)
+# 	# params = {'ro' : sqrt(const * log(np.linalg.norm(model.M_)))}
+# 	# model.set_params(params)
+#
+# # plt.subplot(2, 1, 2)
+# plt.plot(x_plot, y_plot, 'red')
+# plt.ylabel('Regret')
+# plt.xlabel('Time step')
+# plt.title('Chosen const = ' + str(const))
+plt.show()
 
 
 # Lists for plot

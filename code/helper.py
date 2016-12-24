@@ -1,4 +1,4 @@
-import math, numpy as np
+import math, scipy, numpy as np
 
 
 
@@ -20,10 +20,7 @@ class Lin_Alg:
         	Updated inverse of the matrix
         '''
     	c = 1 / (1 + np.dot(np.dot(X, M_inv), X.transpose()))
-        # print X.shape
         add = np.outer(X, X.transpose())
-        # print M_inv.shape
-        # print add.shape
     	inter = c * np.dot(np.dot(M_inv, add), M_inv)
     	return M_inv - inter
 
@@ -42,6 +39,8 @@ class Lin_Alg:
 def link_func(name, val):
     if name == "logistic":
         return logistic(val)
+    elif name == "identity":
+        return val
     else:
         return 0
 
@@ -58,12 +57,16 @@ def link_func(name, val):
 	The output of logistic function
 '''
 def gaussian(mean, covariance, samples):
+    # print "asked samples = ",samples
     nf = mean.shape[0]
     shape = [samples]
     final_shape = list(shape[:])
     final_shape.append(nf)
     x = np.random.standard_normal(final_shape).reshape(-1, nf)
-    return np.dot(x, np.sqrt(covariance)) + mean
+    # sqc = np.nan_to_num(np.sqrt(covariance))
+    sqc = scipy.linalg.sqrtm(covariance)
+    print "covariance params = ", np.amax(sqc), np.amin(sqc)
+    return np.dot(x, sqc) + mean
 
 
 '''
@@ -79,5 +82,4 @@ def logistic(val):
 	try:
 		return 1 / (1 + math.exp(-val))
 	except:
-		# print val
 		return math.exp(val) / (1 + math.exp(val))

@@ -1,8 +1,9 @@
-import numpy as np, time, itertools, pickle
+import numpy as np, time, itertools, pickle, os
 from math import sqrt, log
 import helper
 from scipy.stats import bernoulli
 from time import time
+from datetime import datetime
 
 #
 # class Estimator:
@@ -124,9 +125,11 @@ class MAB_GridSearch:
 		----------
 		self : object, Returns grid search model.
 		"""
-		n_samples, n_features = X.shape
-		# Number of partitions for cross validation
-		l = (n_samples + self.k - 1) / self.k
+		n_samples = 0
+		if type(X) is not list:
+			n_samples, n_features = X.shape
+			# Number of partitions for cross validation
+			l = (n_samples + self.k - 1) / self.k
 		config_dict = {}
 
 		# Make list of sets of parameters and their values space
@@ -138,21 +141,23 @@ class MAB_GridSearch:
 
 		# Some useful variables
 		config = 0
-		self.best_params = {}
+		best_params = {}
 		best_score = 0.0
 		x_plot = []
 		y_plot = []
+		self.best_const = 0
 
 		# Loop over all configurations to check for best
 		for param_list in itertools.product(*param_lists):
 			cur_estimator = self.estimator
-			Des_mat = np.zeros((n_features, n_features))
-			for x in cur_estimator.arms:
-				Des_mat = Des_mat + np.outer(x, x.transpose())
+			# Des_mat = np.zeros((n_features, n_features))
+			# for x in cur_estimator.arms:
+			# 	Des_mat = Des_mat + np.outer(x, x.transpose())
 			config += 1
 			config_dict[config] = param_list
 			regret = 0.0
 			const = 0
+			delta = 0
 			# Make dictionary of parameters for this configuration
 			params = {}
 			num_params = len(param_names)
@@ -160,69 +165,121 @@ class MAB_GridSearch:
 				params[param_names[j]] = param_list[j]
 			if 'ro' in params:
 				const = params['ro']
-				params['ro'] = sqrt(const * log(np.linalg.norm(Des_mat)))
-			if 'nu' in params:
-				const = params['nu']
-				params['nu'] = const * log(50)
+				if cur_estimator.algo != 'UCB':
+					params['ro'] = sqrt(const * log(np.linalg.norm(cur_estimator.M_)))
+			if 'const' in params or 'delta' in params:
+				const = params.pop('const')
+				# delta = params.pop('delta')
+				# params['nu'] = const *  9 * n_features * log(50 / delta)
+				params['nu'] = const *  log(50)
+
+			# print params
 
 			# Set this configuration in the estimator
 			cur_estimator.set_params(params)
-
-			# pt = time()
-
-			cur_estimator.fit(X, Y)											#Initial FIT
+			# print str(const) + "\t" + str(params)
+			if cur_estimator.algo == 'UCB':
+				n_samples, n_features = cur_estimator.arms.shape
+				h = np.zeros(n_samples)
+				for i in range(50):
+					j = random.randint(0, n_samples - 1)
+					while(h[j] == 1):
+						j = random.randint(0, n_samples - 1)
+					h[j] = 1
+					y = self.adversary.get_adversary_reward(cur_estimator.arms[j])
+					regret += self.adversary.a_star_reward - y
+					cur_estimator.update_matrix(cur_estimator.arms[j])
+					vec = np.dot(cur_estimator.M_, cur_estimator.arms[j].reshape(n_features,))
+					cur_estimator.w_hat += (cur_estimator.ro / np.linalg.norm(vec)) * vec
+			else:
+				cur_estimator.fit(X, Y)											#Initial FIT
 			# print "Took %f seconds in initial fit"%(time() - pt)
-			diff = self.adversary.w_star_ - cur_estimator.w_hat
-			regret = np.linalg.norm(diff)
-			print "regret = " + str(regret) + "\twhile taking 0th step"
+			# diff = self.adversary.w_star_ - cur_estimator.w_hat
+			# regret = np.linalg.norm(diff)
+			# print "regret = " + str(regret) + "\twhile taking 0th step"
 
 			# Sample arms further
 			for t in range(self.samples):
 				# pt = time()
 				next_arm = cur_estimator.predict_arm(cur_estimator.acquisition)		# Predit arm
+				# print np.linalg.norm(cur_estimator.M_), log(np.linalg.norm(cur_estimator.M_) + 1)
 				# print "Took %f seconds to predict arm"%(time() - pt)
 				# pt = time()
 				# print next_arm.shape
-				cur_estimator.update_matrix(next_arm)						# Update design matrix
+				if cur_estimator.algo != 'UCB':
+					cur_estimator.update_matrix(next_arm)						# Update design matrix
 				y = self.adversary.get_adversary_reward(next_arm)			# Sample and get reward from adversary
 
 				# Add the predicted arm and reward in list
 				Y1 = list(Y)
 				X1 = list(X)
 				X1.append(next_arm)
-				Y1.append(bernoulli.rvs(y))
+				# Y1.append(bernoulli.rvs(y))
+				Y1.append(y)
 				X = np.array(X1)
 				Y = np.array(Y1)
 
-				# Fit again and update the difference
-				cur_estimator.fit(X, Y)
+				if cur_estimator.algo != 'UCB':
+					# Fit again and update the difference
+					cur_estimator.fit(X, Y)
 				diff = self.adversary.w_star_ - cur_estimator.w_hat
-				regret += np.linalg.norm(diff)
-				print "regret = " + str(regret) + "\twhile taking " + str(t) + "th step"
+				# regret += np.linalg.norm(diff)
+				regret += self.adversary.a_star_reward - y
+				# print(y)
+				# print "best arm = ", j
+				# print "regret = " + str(regret) + "\twhile taking " + str(t) + "th step"
+				# print "Distance from w_star = ", np.linalg.norm(diff)
+				# print "Hyperparameter ro = ", cur_estimator.ro
+				# print "chose arm ", j
 
 				# Update design matrix and set ro for further samples
-				Des_mat = Des_mat + np.outer(next_arm, next_arm.transpose())
+				# Des_mat = Des_mat + np.outer(next_arm, next_arm.transpose())
 				if 'ro' in params:
-					params['ro'] = sqrt(const * log(np.linalg.norm(Des_mat)))
+					params['ro'] = sqrt(const * log(np.linalg.norm(cur_estimator.M_) + 1))
 				if 'nu' in params:
-					params['nu'] = const * log(51 + t)
+					# params['nu'] = const * log(51 + t)
+					# params['nu'] = const *  9 * n_features * log((51 + t) / delta)
+					params['nu'] = const *  log((51 + t))
+				# print str(const) + "\t" + str(params)
 				cur_estimator.set_params(params)
+				# print params
 				# print "Took %f seconds to update for this arm"%(time() - pt)
 			# Average regret for this config
 			avg_regret = float(regret) / float(self.samples + n_samples)
 			print "average regret = " + str(avg_regret) + "\twhile taking " + str(config) + "th configuration"
-			x_plot.append(config)
+			if self.estimator.algo == 'lazy_UCB' or self.estimator.algo == 'UCB':
+				x_plot.append(const)
+			else:
+				x_plot.append(config)
 			y_plot.append(avg_regret)
 			# If first configuration or a better configuration,
 			# update the best configuration
 			if config == 1 or avg_regret < best_score:
 				best_score = avg_regret
-				self.best_params = params
+				best_params = params
+				self.best_const = const
+				self.best_delta = delta
+		fdir = '../../' + datetime.today().strftime('%Y%m%d') + '/'
+		if not os.path.exists(fdir):
+			os.makedirs(fdir)
+		fp = ''
+		if self.estimator.algo == 'lazy_UCB':
+			fp = fdir + 'lazy_UCB.txt'
+		elif self.estimator.algo == 'UCB':
+			fp = fdir + 'UCB.txt'
+		else:
+			fp = fdir + 'lazy_TS2.txt'
+		f = open(fp, 'a')
+		f.write("For " + self.estimator.algo + ", best estimated constant = " + str(self.best_const))
+		if self.estimator.algo == 'lazy_TS':
+			f.write(" and best estimated delta = " + str(self.best_const))
+		f.write("\n")
+		f.close()
 
 		# Plot graphs before leaving
 		if self.plot is not None:
 			self.plot.subplot(2, 1, 1)
-			if self.estimator.algo == 'UCB':
+			if self.estimator.algo == 'lazy_UCB' or self.estimator.algo == 'UCB':
 				self.plot.plot(x_plot, y_plot, 'red')
 			else:
 				self.plot.plot(x_plot, y_plot, 'blue')
@@ -230,11 +287,13 @@ class MAB_GridSearch:
 			self.plot.xlabel('configuration')
 
 		# Update the best estimator with the best parameter configuration
-		self.best_estimator_ = self.estimator.set_params(self.best_params).fit(X, Y)
-		if self.estimator.algo == 'UCB':
-			pickle.dump(config_dict, open("./configUCB.p", "wb"))
+		self.best_estimator_ = self.estimator.set_params(best_params).fit(X, Y)
+		if self.estimator.algo == 'lazy_UCB':
+			pickle.dump(config_dict, open(fdir + "configlazy_UCB.p", "wb"))
+		elif self.estimator.algo == 'UCB':
+			pickle.dump(config_dict, open(fdir + "configUCB.p", "wb"))
 		else:
-			pickle.dump(config_dict, open("./configTS.p", "wb"))
+			pickle.dump(config_dict, open(fdir + "configlazy_TS.p", "wb"))
 		self.sp += 2
 
 		return self

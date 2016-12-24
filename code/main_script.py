@@ -1,169 +1,104 @@
 from GLM_MAB import GLM_MAB, Adversary
 from learner import MAB_GridSearch as gs
 from math import log, sqrt
+import helper
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from scipy.stats import bernoulli
-import numpy as np, pylab, random
+import numpy as np, pylab, random, pickle
 from time import time
 
-
+my_features = 25
 
 # Generate w_star for adversary
-mean = np.zeros(1000)
-covariance = np.random.rand(1000, 1000)
-covariance = np.dot(covariance, covariance.transpose()) / np.linalg.norm(np.dot(covariance, covariance.transpose()))
-D = 10
-pt = time()
-w_star = np.random.multivariate_normal(mean, covariance, size = 1)[0]
-ct = time()
-# print "Took %f seconds to sample w_star"%(ct - pt)
-# pt = ct
+mean = np.zeros(my_features)
+covariance = np.random.rand(my_features, my_features)
+covariance = np.dot(covariance, covariance.transpose()) + np.eye(my_features)
+w_star = np.random.multivariate_normal(mean, covariance, 1)[0]
+# w_star = np.random.multivariate_normal(np.zeros(my_features), np.eye(my_features), 1)[0]
 w_star = w_star / np.linalg.norm(w_star)
 
-adversary = Adversary(w_star)
-
 # Get arms
-X = np.random.multivariate_normal(mean, covariance, size = 100)
+X = np.random.multivariate_normal(mean, covariance, 100)
+# X = np.random.multivariate_normal(np.zeros(my_features), np.eye(my_features), 100)
 n_samples, n_features = X.shape
-for x in X:
-	x = x / np.linalg.norm(x)
+for i in range(n_samples):
+	X[i] = X[i] / np.linalg.norm(X[i])
+# X = pickle.load(open("./X.p", "rb"))
+# w_star = pickle.load(open("./ws.p", "rb"))
 
-model = GLM_MAB(arms = X)
-
-# Initialize grid search
-params = {'ro' : [float(i + 1) / 100.0 for i in range(10, 1001, 10)]}
-# ct = time()
-# print "Took %f seconds in preprocessing"%(ct - pt)
-# pt = ct
-gs_model = gs(model, adversary, params, 100, plot = plt)
-
-# Sample some points for warm start
-dataset = {}
-dataset["ip"] = []
-dataset["op"] = []
-Y = []
-t = 50
-h = np.zeros(1000)
-for i in range(t):
-	j = random.randint(0, 99)
-	while(h[j] == 1):
-		j = random.randint(0, 99)
-	h[j] = 1
-	dataset["ip"].append(model.arms[j])
-	y = adversary.get_adversary_reward(model.arms[j])
-	Y.append(y)
-	dataset["op"].append(bernoulli.rvs(y))
-dataset["ip"] = np.array(dataset["ip"])
-dataset["op"] = np.array(dataset["op"])
-model.update_matrix(dataset["ip"])
-
-# Fit the model to get best estimator
-model = gs_model.fit(dataset["ip"], dataset["op"]).best_estimator_
-print "ro parameter for UCB = ", model.ro
-print "Best const config = ", gs_model.best_params
-
-# ct = time()
-# print "Took %f seconds in sampling 50 points"%(ct - pt)
-
-# Train on this best model
-model.fit(dataset["ip"], dataset["op"])
+adversary = Adversary(w_star, X, model = "logistic")
+# a_star_reward = np.amax(np.dot(X, w_star))
 
 y_plot = []
-x_plot = []
-regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
-print regret
-x_plot.append(50)
-y_plot.append(regret)
-
-for i in range(t, 10000):
-	next_arm = model.predict_arm(model.acquisition)					# Predit arm
-	model.update_matrix(next_arm)					# Update design matrix
-	# chosen.append(np.where(model.arms == next_arm)[0][0])
-	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
-
-	Y1 = list(dataset["op"])
-	X1 = list(dataset["ip"])
-	X1.append(next_arm)
-	Y.append(y)
-	Y1.append(bernoulli.rvs(y))
-	dataset["ip"] = np.array(X1)
-	dataset["op"] = np.array(Y1)
-
-	model.fit(dataset["ip"], dataset["op"])
-	regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
-	print "regret = " + str(regret) + "\twhile taking " + str(i) + "th step"
-	x_plot.append(i + 1)
-	y_plot.append(regret)
-
-plt.subplot(2, 1, 2)
-plt.plot(x_plot, y_plot, 'red')
-plt.ylabel('Regret')
-plt.xlabel('Time step')
-
-
-model = GLM_MAB(arms = X, algo = 'TS')
-
-# Initialize grid search
-params = {'nu' : [float(i + 1) / 100.0 for i in range(10, 1001, 10)]}
-gs_model = gs(model, adversary, params, 100, plot = plt)
-
-# Sample some points for warm start
-dataset = {}
-dataset["ip"] = []
-dataset["op"] = []
-Y = []
-t = 50
-h = np.zeros(1000)
-for i in range(t):
-	j = random.randint(0, 99)
-	while(h[j] == 1):
-		j = random.randint(0, 99)
-	h[j] = 1
-	dataset["ip"].append(model.arms[j])
-	y = adversary.get_adversary_reward(model.arms[j])
-	Y.append(y)
-	dataset["op"].append(bernoulli.rvs(y))
-dataset["ip"] = np.array(dataset["ip"])
-dataset["op"] = np.array(dataset["op"])
-model.update_matrix(dataset["ip"])
-
-# Fit the model to get best estimator
-model = gs_model.fit(dataset["ip"], dataset["op"]).best_estimator_
-print "nu parameter for TS = ", model.nu
-print "Best const config = ", gs_model.best_params
-
-# Train on this best model
-model.fit(dataset["ip"], dataset["op"])
-
-y_plot = []
-x_plot = []
-regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
-print regret
-x_plot.append(50)
-y_plot.append(regret)
-
-for i in range(t, 10000):
-	next_arm = model.predict_arm(model.acquisition)					# Predit arm
-	model.update_matrix(next_arm)					# Update design matrix
-	# chosen.append(np.where(model.arms == next_arm)[0][0])
-	y = adversary.get_adversary_reward(next_arm)	# Sample and get reward from adversary
-
-	Y1 = list(dataset["op"])
-	X1 = list(dataset["ip"])
-	X1.append(next_arm)
-	Y.append(y)
-	Y1.append(bernoulli.rvs(y))
-	dataset["ip"] = np.array(X1)
-	dataset["op"] = np.array(Y1)
-
-	model.fit(dataset["ip"], dataset["op"])
-	regret = np.linalg.norm(adversary.w_star_ - model.w_hat)
-	print "regret = " + str(regret) + "\twhile taking " + str(i) + "th step"
-	x_plot.append(i + 1)
-	y_plot.append(regret)
-
-plt.subplot(2, 1, 2)
-plt.plot(x_plot, y_plot, 'blue')
-plt.ylabel('Regret')
-plt.xlabel('Time step')
+# colors = ['red', 'green', 'blue', 'black']
+# labels = []
+colors = ['red', 'green']
+labels = ["lazy_TS", "lazy_UCB"]
+plt.subplot(211)
+lines = [0, 0]
+i = -1
+for algo in labels:
+	i += 1
+	model = GLM_MAB(X, algo = algo, solver = "logistic")
+	yp = []
+	regret = 0.0
+	avg_regret = 0.0
+	for t in range(1000):
+		next_arm = model.predict_arm(model.acquisition)
+		next_arm = next_arm.reshape(1, n_features)
+		reward = adversary.get_adversary_reward(next_arm)
+		# reward = np.dot(next_arm, w_star)
+		model.update(next_arm, reward[0])
+		regret += adversary.a_star_reward - reward[0]
+		avg_regret = regret / (t + 1)
+		yp.append(regret)
+	print avg_regret
+	lines[i], = plt.plot(range(1, 1001), yp, label = labels[i], color = colors[i])
+	y_plot.append([yp[ypi] / (ypi + 1) for ypi in range(len(yp))])
+plt.ylabel("Cumulative Regret")
+plt.xlabel("time steps")
+plt.subplot(212)
+i = -1
+for yp in y_plot:
+	i += 1
+	lines[i], = plt.plot(range(1, 1001), yp, label = labels[i], color = colors[i])
+plt.ylabel("Average Regret")
+plt.xlabel("time steps")
+plt.legend()
 plt.show()
+
+
+# plt.subplot(211)
+# i = -1
+# lines = [0, 0, 0, 0]
+# for nu in [1.0, .5, .7, .1]:
+# 	i += 1
+# 	model = GLM_MAB(X, algo = "lazy_UCB", ro = nu, solver = "logistic")
+# 	yp = []
+# 	regret = 0.0
+# 	avg_regret = 0.0
+# 	for t in range(1000):
+# 		next_arm = model.predict_arm(model.acquisition)
+# 		next_arm = next_arm.reshape(1, n_features)
+# 		reward = adversary.get_adversary_reward(next_arm)
+# 		model.update(next_arm, reward)
+# 		regret += adversary.a_star_reward - reward[0]
+# 		avg_regret = regret / (t + 1)
+# 		yp.append(regret)
+# 	print avg_regret
+# 	labels.append("ro = " + str(nu))
+# 	lines[i], = plt.plot(range(1, 1001), yp, label = labels[i], color = colors[i])
+# 	y_plot.append([yp[ypi] / (ypi + 1) for ypi in range(len(yp))])
+# plt.ylabel("Cumulative Regret")
+# plt.xlabel("time steps")
+#
+# plt.subplot(212)
+# i = -1
+# for yp in y_plot:
+# 	i += 1
+# 	lines[i], = plt.plot(range(1, 1001), yp, label = labels[i], color = colors[i])
+# plt.ylabel("Average Regret")
+# plt.xlabel("time steps")
+# plt.legend()
+# plt.show()
