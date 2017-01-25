@@ -8,7 +8,7 @@ class Lin_Alg:
     '''
 
     @staticmethod
-    def update_mat_inv(M_inv, X):
+    def update_mat_inv(M_inv, X, mu = None):
         '''
            FUNCTION TO GET DYNAMICALLY CHANGING MATRIX'S INVERSE
 
@@ -19,8 +19,13 @@ class Lin_Alg:
            RETURNS: NUMPY ARRAY
         	Updated inverse of the matrix
         '''
-    	c = 1 / (1 + np.dot(np.dot(X, M_inv), X.transpose()))
-        add = np.outer(X, X.transpose())
+        u = X
+        v = X
+        if mu != None:
+            u = mu * X
+            v = (1 - mu) * X
+        c = 1 / (1 + np.dot(np.dot(u, M_inv), v.transpose()))
+        add = np.outer(u, v.transpose())
     	inter = c * np.dot(np.dot(M_inv, add), M_inv)
     	return M_inv - inter
 

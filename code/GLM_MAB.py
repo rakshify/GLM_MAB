@@ -1,4 +1,4 @@
-import numpy as np, inspect, helper
+import numpy as np, inspect, helper, sys
 from math import fabs, log, sqrt
 from sklearn import linear_model as LM
 from time import time
@@ -24,7 +24,7 @@ class GLM_MAB:
     """
 
 
-	def __init__(self, arms, algo = 'lazy_UCB', ro = 0.5, nu = 0.1,
+	def __init__(self, arms, algo = 'lazy_UCB', ro = 0.5, nu = 0.5,
 					solver = "logistic", warm_start = True):
 		self.algo = algo
 		self.arms = arms
@@ -36,8 +36,9 @@ class GLM_MAB:
 		self.M_ = np.eye(n_features)
 		self.M_inv_ = np.eye(n_features)
 		if (solver == "logistic"):
-			self.model_ = LM.LogisticRegression(solver = 'newton-cg', \
-												warm_start = warm_start)
+			self.model_ = LM.LogisticRegression(solver = 'newton-cg', C = 0.5)
+			# self.model_ = LM.LogisticRegression(solver = 'newton-cg', \
+												# warm_start = warm_start)
 			self.link_ = "logistic"
 		elif (solver == "linear"):
 			self.model_ = LM.Ridge()
@@ -64,6 +65,7 @@ class GLM_MAB:
 		return self
 
 
+	# def update_matrix(self, X, mu):
 	def update_matrix(self, X):
 		"""Update the self design matrix after new samples
         Parameters
@@ -76,15 +78,53 @@ class GLM_MAB:
         self.M_inv_ : array, shape(n_features, n_features)
             Returns the design matrix.
         """
-		self.M_ = self.M_ + np.outer(X, X.transpose())
-		# self.M_inv_ = np.linalg.inv(self.M_)
-		self.M_inv_ = helper.Lin_Alg.update_mat_inv(self.M_inv_, X)
+		# mu = helper.link_func(self.link_, np.dot(np.squeeze(X), np.squeeze(self.w_hat)))
+		# self.M_ = self.M_ + mu * (1 - mu) * np.outer(X, X.transpose())
+		# print X.shape
+		n_samples, n_features = X.shape
+		mu = []
+		for i in range(n_samples):
+			mu.append(helper.link_func(self.link_, np.dot(X[i], np.squeeze(self.w_hat))))
+		# print mu
+		mu = np.asmatrix(mu)
+		mu2 = np.asmatrix(np.ones(n_samples)) - np.asmatrix(mu)
+		mu = mu * X
+		# print mu.shape
+		mu2 = mu2 * X
+		# print mu2.shape
+		# print mu.T.shape
+		sm = np.asarray(mu.T * mu2)
+		# print sm.shape, sm[0]
+		for i in range(n_features):
+			# print self.M_[i][i], sm[i][i]
+			self.M_[i][i] = self.M_[i][i] + sm[i][i]
+		self.M_inv_ = np.linalg.inv(self.M_)
+		# self.M_inv_ = helper.Lin_Alg.update_mat_inv(self.M_inv_, X, mu)
 
 
-	def update(self, context, reward):
-		self.update_matrix(context)
-		self.f = self.f + reward * context
-		self.w_hat = np.dot(self.M_inv_, self.f.transpose())
+	def update(self, context, reward, choices = []):
+		if self.link_ == "identity":
+			self.update_matrix(context, reward)
+			mu = helper.link_func(self.link_, np.dot(context, self.w_hat))
+			self.f = self.f + reward * mu * (1 - mu) * context
+			self.w_hat = np.dot(self.M_inv_, self.f.transpose())
+		elif self.link_ == "logistic":
+			l = len(choices)
+			S = np.zeros((l, l))
+			n_samples, n_features = self.arms.shape
+			X = self.arms[choices[0]].reshape(1, n_features)
+			mu = helper.link_func(self.link_, np.dot(self.arms[choices[0]], self.w_hat))
+			S[0][0] = mu * (1 - mu)
+			for i in range(1, l):
+				X = np.concatenate((X, self.arms[choices[i]].reshape(1, n_features)), axis = 0)
+				mu = helper.link_func(self.link_, np.dot(self.arms[choices[i]], self.w_hat))
+				S[i][i] = mu * (1 - mu)
+			X = np.asmatrix(X)
+			S = np.asmatrix(S)
+			self.M_ = X.T * S * X + np.asmatrix(np.eye(n_features))
+			self.M_inv_ = np.linalg.inv(self.M_)
+			self.w_hat = np.asarray(self.M_inv_ * X.T * S * np.asmatrix(reward).T)
+
 
 
 	def predict_arm(self, acquisition_function):
@@ -130,10 +170,15 @@ class GLM_MAB:
 
 		if self.algo == 'lazy_TS':
 			# Get w_tilda from normal centered at w_hat
-			n_samples, n_features = self.arms.shape
-			w_tilde = np.random.multivariate_normal(np.squeeze(self.w_hat)\
-						, self.nu * self.nu  * self.M_inv_, 1)[0]
-			return self.arms[np.argmax(np.dot(self.arms, w_tilde))]
+			try:
+				n_samples, n_features = self.arms.shape
+				w_tilde = np.random.multivariate_normal(np.squeeze(self.w_hat)\
+							, self.nu * self.nu  * self.M_inv_, 1)[0]
+				ch = np.argmax(np.dot(self.arms, w_tilde))
+				return self.arms[ch], ch
+			except:
+				print self.M_inv_.shape
+				sys.exit(0)
 
 			# # Get arm which maximizes the dot product with the w_hat in case of finite arms
 			# if n_features < float("inf"):
