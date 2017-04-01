@@ -88,3 +88,53 @@ def logistic(val):
 		return 1 / (1 + math.exp(-val))
 	except:
 		return math.exp(val) / (1 + math.exp(val))
+
+
+def func(w, contexts, rewards):
+    l = len(contexts)
+    for i in range(l):
+        v = -rewards[i] * np.dot(w, contexts[i])
+        mul = rewards[i] * logistic(v)
+        val = mul * contexts[i]
+    return val
+
+
+def gd(w, Q, contexts, rewards, alpha):
+    feats = w.shape[0]
+    tw = np.zeros(feats)
+    for i in range(feats):
+        tw[i] = w[i]
+    for i in range(100):
+        eta = 1.0 / np.sqrt(float(i + 2))
+        grad = (alpha / 2.0) * np.dot(Q, (tw - w))
+        grad -= func(w, contexts, rewards)
+        # if np.linalg.norm(grad) <= 0.001:
+        #     break
+        tw = tw - eta * grad
+    return tw;
+
+
+def sgld(w, f, Q, contexts, rewards, alpha, N = 100.0):
+    feats = w.shape[0]
+    tw = np.zeros(feats)
+    for i in range(feats):
+        tw[i] = w[i]
+    
+    for i in range(100):
+        eta = 1.0 / np.sqrt(float(i + 2))
+        grad = (alpha / 2.0) * np.dot(Q, (tw - w))
+        grad -= func(w, contexts, rewards) * N / float(len(contexts))
+        # if np.linalg.norm(grad) <= 0.001:
+        #     break
+        eps = np.random.normal(0, eta)
+        tw = tw + eta * grad / 2.0 + eps
+
+    return tw
+
+
+# class SGLD():
+#     def __init__(self, feats):
+#         self.f = np.zeros(feats)
+#
+#     def sgld(self, w, Q, contexts, rewards, alpha, N = 100):
+#         n, f = contexts.shape
