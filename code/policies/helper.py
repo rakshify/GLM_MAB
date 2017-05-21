@@ -92,10 +92,19 @@ def logistic(val):
 
 def func(w, contexts, rewards):
     l = len(contexts)
+    val = np.zeros(contexts[0].shape[0])
     for i in range(l):
-        v = -rewards[i] * np.dot(w, contexts[i])
-        mul = rewards[i] * logistic(v)
-        val = mul * contexts[i]
+        mul = 0
+        if rewards[i] == 1:
+            v = -np.dot(w, contexts[i])
+            mul = logistic(v)
+        else:
+            v = np.dot(w, contexts[i])
+            mul = -logistic(v)
+        # print contexts[i].shape
+        # print "mul = ", mul
+        val += mul * contexts[i]
+        # print val.shape
     return val
 
 
@@ -104,14 +113,38 @@ def gd(w, Q, contexts, rewards, alpha):
     tw = np.zeros(feats)
     for i in range(feats):
         tw[i] = w[i]
-    for i in range(100):
-        eta = 1.0 / np.sqrt(float(i + 2))
-        grad = (alpha / 2.0) * np.dot(Q, (tw - w))
-        grad -= func(w, contexts, rewards)
+    for i in range(1000):
+        eta = 1 / np.sqrt(float(i + 2))
+        prior = alpha * np.dot(Q, (tw - w))
+        likeli = func(w, contexts, rewards)
+        grad = prior + likeli
         # if np.linalg.norm(grad) <= 0.001:
         #     break
+        # print tw
         tw = tw - eta * grad
-    return tw;
+        # print tw
+        # print np.linalg.norm(tw)
+        tw /= np.linalg.norm(tw)
+        # print tw
+        # print eta * grad
+        # print likeli
+        # print prior
+        # print "==============="
+        # print tw
+        # print contexts[0]
+        # print np.linalg.norm(contexts[0]), np.linalg.norm(tw), np.dot(tw, contexts[0])
+        # print "==============="
+        # print "==============="
+        if np.linalg.norm(eta * grad) < 0.001:
+            print "i = ", i
+            if i == 0:
+                print grad
+                print likeli
+                print prior
+                print np.linalg.norm(contexts[0]), np.linalg.norm(tw), np.dot(tw, contexts[0])
+                print "==============="
+            break
+    return tw
 
 
 def sgld(w, f, Q, contexts, rewards, alpha, N = 100.0):

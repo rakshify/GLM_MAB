@@ -107,14 +107,19 @@ class GLM_MAB:
 			self.f = self.f + reward * context
 			self.w_hat = np.dot(self.M_inv_, self.f.transpose())
 		elif self.solver == "laplace":
-			self.w_hat = helper.gd(self.w_hat, self.M_, context, reward, alpha)
+			# self.w_hat = helper.gd(self.w_hat, self.M_, context, reward, alpha)
+			self.w_hat = scipy.optimize.minimize(fun = self.__to_optimize_laplace, x0 = self.w_hat,\
+													args = (self.M_, self.w_hat, context, reward)).x
 			self.update_matrix(context)
 		elif self.solver == "sgld":
 			self.w_hat, self.f, self.M_ = helper.sgld(self.w_hat, self.f,\
 											self.M_, context, reward, alpha)
 		elif self.solver == "polya":
+			# print context
+			# print "===================="
 			l = len(context)
 			context = np.asarray(context)
+			# print context
 			reward = np.asarray(reward)
 			# print context.shape
 			# print self.w_hat.shape
@@ -123,14 +128,14 @@ class GLM_MAB:
 			psi = np.dot(context, self.w_hat)
 			# print t, alpha
 			gamma = t ** (-alpha)
-			kappa = reward - np.ones(l) * 0.5
+			kappa = reward - np.ones(l) * 5.0
 			Omega = np.eye(l)
 			# print context
 			# print self.w_hat
 			# print psi
 			w = np.ones(l)
 			if not 0 in psi:
-				w = 0.5 * np.tanh(psi / 2.0) / psi
+				w = 5.0 * np.tanh(psi / 2.0) / psi
 			for idx in range(l):
 				Omega[idx][idx] = w[idx]
 			
@@ -147,6 +152,9 @@ class GLM_MAB:
 			self.M_ = (1 - gamma) * self.M_ + gamma * inter
 			# print kappa
 			self.f = (1 - gamma) * self.f + gamma * np.dot(context.T, kappa)
+			# print "gamma = ", gamma
+			# print "inter = ", np.linalg.det(gamma * np.asmatrix(inter))
+			# print np.linalg.det(np.asmatrix(self.M_))
 			# print self.M_
 			# print "##################"
 			self.M_inv_ = np.linalg.inv(self.M_)
@@ -201,6 +209,20 @@ class GLM_MAB:
 
 		return np.sum(to_sum, 0)
 
+	def __to_optimize_laplace(self, theta, Q, m, contexts, rewards):
+		# print theta.shape
+		# print Q.shape
+		prior = 0.5 * np.dot((theta - m).T, np.dot(Q, (theta - m)))
+		neg_likeli = 0
+		l = len(contexts)
+		for i in range(l):
+			v = np.dot(theta, contexts[i])
+			if(rewards[i] == 0):
+				v *= -1
+			neg_likeli += log(helper.logistic(v))
+
+		return prior - neg_likeli
+
 
 
 	def predict_arm(self, contexts, acquisition_function, eps = 0.0):
@@ -244,7 +266,9 @@ class GLM_MAB:
 				n_samples, n_features = contexts.shape
 				w_tilde = np.random.multivariate_normal(np.squeeze(self.w_hat)\
 							, self.nu * self.nu  * self.M_inv_, 1)[0]
-				return np.argmax(np.dot(contexts, w_tilde))#, w_tilde
+				ch = np.argmax(np.dot(contexts, w_tilde))
+				self.pulls[ch] += 1
+				return ch#, w_tilde
 			except:
 				print self.M_inv_.shape
 				sys.exit(0)
